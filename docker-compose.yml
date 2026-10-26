@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: postgres:16            # ready-made Postgres, major version pinned
+    container_name: kr_postgres   # fixed readable name
+    environment:                  # values come from .env
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      - "5434:5432"               # host 5434 -> container 5432 (5433 is used by crypto_rate_postgres)
+    volumes:
+      - pg_data:/var/lib/postgresql/data   # data survives container removal
+    healthcheck:                  # Docker asks "is it ready?" repeatedly
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    mem_limit: 512m               # hard memory cap
+
+volumes:
+  pg_data:
