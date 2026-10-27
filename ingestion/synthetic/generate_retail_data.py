@@ -11,14 +11,14 @@ OUT_DIR = PROJECT_ROOT / "data" / "raw" / "synthetic"
 # (county, price_factor): one store per entry; Nairobi has three stores
 STORE_PLAN = [
     ("Nairobi", 1.10), ("Nairobi", 1.12), ("Nairobi", 1.08),
-    ("Mombasa", 1.08), ("Kisumu", 1.00), ("Nakuru", 0.97),
-    ("Uasin Gishu", 0.95), ("Nyeri", 0.96), ("Machakos", 1.02),
+    ("Kilifi", 1.08), ("Kisumu", 1.00), ("Nakuru", 0.97),
+    ("Uasin-Gishu", 0.95), ("Nyeri", 0.96), ("Machakos", 1.02),
     ("Kisii", 0.98), ("Meru", 0.94), ("Kakamega", 0.99),
 ]
 
 SUPPLIERS = [
     {"supplier_id": "SUP1", "supplier_name": "Rift Valley Grains Ltd", "county": "Nakuru"},
-    {"supplier_id": "SUP2", "supplier_name": "Coast Staples Distributors", "county": "Mombasa"},
+    {"supplier_id": "SUP2", "supplier_name": "Coast Staples Distributors", "county": "Kilifi"},
     {"supplier_id": "SUP3", "supplier_name": "Lake Region Produce Co", "county": "Kisumu"},
     {"supplier_id": "SUP4", "supplier_name": "Highland Dairy Suppliers", "county": "Nyeri"},
     {"supplier_id": "SUP5", "supplier_name": "Capital Foods Wholesale", "county": "Nairobi"},
@@ -27,18 +27,18 @@ SUPPLIERS = [
 
 # (name, category, unit, base_price_kes, kamis_commodity, supplier_id)
 PRODUCT_CATALOG = [
-    ("Maize flour 2kg", "Cereals", "pack", 150, "Maize flour", "SUP1"),
+    ("Maize flour 2kg", "Cereals", "pack", 150, "Maize Flour", "SUP1"),
     ("Rice 2kg", "Cereals", "pack", 380, "Rice", "SUP2"),
-    ("Wheat flour 2kg", "Cereals", "pack", 200, "Wheat flour", "SUP1"),
-    ("Sugar 1kg", "Staples", "pack", 190, "Sugar", "SUP5"),
-    ("Cooking oil 1L", "Staples", "bottle", 330, "Cooking oil", "SUP6"),
-    ("Beans 1kg", "Pulses", "kg", 190, "Beans", "SUP3"),
+    ("Wheat flour 2kg", "Cereals", "pack", 200, "Wheat Flour", "SUP1"),
+    ("Eggs tray of 30", "Dairy", "tray", 450, "Eggs", "SUP5"),
+    ("Cooking oil 1L", "Staples", "bottle", 330, "Sunflower Oil", "SUP6"),
+    ("Beans 1kg", "Pulses", "kg", 190, "Beans Rosecoco", "SUP3"),
     ("Tomatoes 1kg", "Vegetables", "kg", 110, "Tomatoes", "SUP3"),
-    ("Onions 1kg", "Vegetables", "kg", 120, "Onions", "SUP3"),
-    ("Irish potatoes 1kg", "Vegetables", "kg", 80, "Irish potato", "SUP3"),
-    ("Cabbage 1kg", "Vegetables", "kg", 60, "Cabbage", "SUP3"),
-    ("Kale bunch", "Vegetables", "bunch", 30, "Kale", "SUP3"),
-    ("Milk 500ml", "Dairy", "pack", 65, "Milk", "SUP4"),
+    ("Onions 1kg", "Vegetables", "kg", 120, "Dry Onions", "SUP3"),
+    ("Irish potatoes 1kg", "Vegetables", "kg", 80, "White Irish Potatoes", "SUP3"),
+    ("Cabbage 1kg", "Vegetables", "kg", 60, "Cabbages", "SUP3"),
+    ("Kale bunch", "Vegetables", "bunch", 30, "Kales/Sukuma Wiki", "SUP3"),
+    ("Milk 500ml", "Dairy", "pack", 65, "Cow Milk(Processd)", "SUP4"),
 ]
 
 STORE_FIELDS = ["store_id", "store_name", "county", "opened_date"]
