@@ -65,8 +65,7 @@ def write_partitions(df, source_name, ingested_at):
             old = pd.read_csv(target, dtype=str, keep_default_na=False)
             part = pd.concat([old, part], ignore_index=True)
         part = part.drop_duplicates(subset=COLUMNS, keep="first")
-        part = part.drop_duplicates(subset=KEY, keep="last")
-        part = part.sort_values(KEY)
+        part = part.sort_values(COLUMNS)
         tmp = target.with_suffix(".tmp")
         part.to_csv(tmp, index=False)
         tmp.replace(target)
@@ -91,6 +90,7 @@ def main():
         STATE_FILE.unlink()
 
     state = load_state()
+    run_start = dict(state)
     files = sorted(INCOMING.glob("*.xls*"))
     if not files:
         print(f"No Excel files found in {INCOMING}")
@@ -99,7 +99,7 @@ def main():
     ingested_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
     for path in files:
         raw = read_export(path)
-        fresh = filter_new(raw, state)
+        fresh = filter_new(raw, run_start)
         written = write_partitions(fresh, path.name, ingested_at)
         advance_watermark(state, raw)
         print(f"{path.name}: read {len(raw)}, skipped {len(raw) - len(fresh)} "
