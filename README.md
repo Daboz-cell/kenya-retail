@@ -1,111 +1,99 @@
 # Kenya National Retail and Market Intelligence Platform
 
-A complete data engineering platform that tracks what food and household goods cost across Kenya and evaluates retail operational performance against national and county market benchmarks.
+A solo data engineering capstone. It tracks what food and household goods cost across Kenya
+(public market data) and how a retail chain performs against those prices.
 
----
+## Status
 
-## Architecture Overview
+| Module | Status |
+|---|---|
+| 1. Data ingestion | Complete, submitted for review |
+| 2. Apache Kafka | Planned next |
+| 3. Apache Spark (Bronze, Silver, Gold) | Planned |
+| 4. PostgreSQL data warehouse | Planned |
+| 5. Apache Airflow | Planned |
+| 6. Data quality | Planned |
+| 7. Deployment | Planned |
+| 8. Documentation | In progress (this README) |
 
-```
-                      DATA INGESTION ARCHITECTURE (Milestone 1)
+## Module 1: data ingestion
 
-+-----------------------+     +------------------------+     +------------------------+
-|  Synthetic Retail     |     |  KAMIS Portal (Kilimo) |     |  KNBS Monthly Report   |
-|  Operational Data     |     |  Market Prices (Gov)   |     |  CPI & Inflation (Gov) |
-+-----------+-----------+     +-----------+------------+     +-----------+------------+
-            |                             |                              |
-            v                             v                              v
-  generate_retail_data.py        ingest_kamis.py               ingest_knbs_cpi.py
-  (Deterministic seed,          (Watermark state,             (PDF table extraction,
-   date-partitioned POS)         lookback deduplication)       retail benchmark map)
-            |                             |                              |
-            +-----------------------------+------------------------------+
-                                          |
-                                          v
-                              RAW DATA LAKE (data/raw/)
-            +-----------------------------+------------------------------+
-            |                             |                              |
-            v                             v                              v
-   data/raw/synthetic/             data/raw/kamis/                 data/raw/knbs/
-   ├── dimensions/                 ├── incoming/                  ├── manual/ (raw PDF)
-   │   ├── stores.csv              ├── _state/watermark.json      ├── cpi_divisions.csv
-   │   ├── products.csv            └── market_prices/             ├── commodity_retail_prices.csv
-   │   └── suppliers.csv               └── date=YYYY-MM-DD/       ├── cpi_monthly_trend.csv
-   ├── pos_transactions/                   └── part-0000.csv      └── commodity_benchmarks.csv
-   │   └── date=YYYY-MM-DD/
-   └── inventory_movements/
-       └── date=YYYY-MM-DD/
-```
+Three sources land untouched in a raw layer (data/raw). The raw layer keeps what the source said,
+so later layers can always be rebuilt from it.
 
----
+### Architecture
 
-## Milestone 1: Data Ingestion Pipelines
+    Synthetic generator --> data/raw/synthetic/
+                              dimensions/ (stores, products, suppliers)
+                              pos_transactions/date=YYYY-MM-DD/
+                              inventory_movements/date=YYYY-MM-DD/
 
-### 1. Synthetic Operational Data Pipeline
-- **Script**: `ingestion/synthetic/generate_retail_data.py`
-- **Description**: Generates realistic point-of-sale (POS) receipts, daily store traffic patterns, weekend/payday spikes, price drift, supplier deliveries (RESTOCK), and perishable shrinkage (WASTAGE).
-- **County & Commodity Alignment**: Store locations and products align 1:1 with KAMIS and KNBS reporting standards (e.g. `Kilifi`, `Uasin-Gishu`, `Nakuru`, `Cow Milk(Processd)`, `Maize Flour`, `White Irish Potatoes`).
-- **Idempotency**: Seed-based pseudo-random generation produces identical, reproducible datasets across runs.
+    KAMIS Excel exports --> data/raw/kamis/incoming/ --> ingest_kamis.py
+                              --> data/raw/kamis/market_prices/date=YYYY-MM-DD/
+                              (state: data/raw/kamis/_state/watermark.json)
 
-### 2. KAMIS Market Prices Pipeline
-- **Scripts**: `ingestion/kamis/download_kamis.py` and `ingestion/kamis/ingest_kamis.py`
-- **Description**: Downloads daily wholesale and retail commodity prices across 40+ Kenya counties from the Ministry of Agriculture portal (`kamis.kilimo.go.ke`).
-- **Incremental Logic**:
-  - Tracks latest ingested dates per commodity in `data/raw/kamis/_state/watermark.json`.
-  - Applies a 3-day lookback window (`LOOKBACK_DAYS = 3`) to reliably ingest late-arriving records.
-  - Deduplicates on composite business key `(commodity, classification, grade, sex, market, county, date)`.
+    KNBS CPI report PDF --> data/raw/knbs/incoming/ --> ingest_knbs.py
+                              --> data/raw/knbs/<dataset>/report_month=YYYY-MM/
+                              datasets: cpi_overall, cpi_divisions, retail_prices, core_noncore
+                              (state: data/raw/knbs/_state/reports.json)
 
-### 3. KNBS CPI & Inflation Pipeline
-- **Script**: `ingestion/knbs/ingest_knbs_cpi.py`
-- **Description**: Extracts and normalizes data from the official Kenya National Bureau of Statistics monthly CPI and inflation release PDF.
-- **Parsed Data Assets**:
-  - `cpi_divisions.csv`: 13 COICOP division index weights, 1-month % changes, and 12-month % changes.
-  - `commodity_retail_prices.csv`: 24 national average commodity retail prices comparing current vs. previous month and year.
-  - `cpi_monthly_trend.csv`: 13-month historical overall, core, and non-core CPI indices and inflation rates.
-  - `commodity_benchmarks.csv`: Joins KNBS benchmark prices directly to our retail store product IDs (`P001` - `P012`).
+### Repository layout
 
----
+    ingestion/synthetic/generate_retail_data.py   synthetic retail chain (12 stores, 12 products, 6 suppliers)
+    ingestion/kamis/download_kamis.py             downloads KAMIS Excel exports politely
+    ingestion/kamis/ingest_kamis.py               KAMIS ingestion with watermark and lookback
+    ingestion/kamis/key_conflicts.py              reports natural keys that carry conflicting rows
+    ingestion/kamis/list_products.py              lists KAMIS product ids
+    ingestion/kamis/inspect_excel.py              prints the layout of an Excel export
+    ingestion/knbs/ingest_knbs.py                 KNBS CPI report ingestion
+    scripts/run_all_ingestion.py                  runs all three and prints what landed
+    docker-compose.yml                            PostgreSQL service (used from Module 4)
 
-## Quickstart: Running Milestone 1
+### Setup and run
 
-### Prerequisites
-Ensure your virtual environment is active and `poppler-utils` is installed:
-```bash
-source .venv/bin/activate
-sudo apt install -y poppler-utils
-pip install pandas requests
-```
+    sudo apt install -y python3-venv python3-pip poppler-utils
+    python3 -m venv .venv
+    source .venv/bin/activate
+    pip install -r requirements.txt
 
-### Run All Ingestion Pipelines
-Execute the unified master runner:
-```bash
-python3 scripts/run_all_ingestion.py
-```
+    python ingestion/kamis/download_kamis.py     # optional: refresh KAMIS exports (13 requests, 3 s apart)
+    mkdir -p data/raw/knbs/incoming              # put each monthly KNBS CPI report PDF here
+    python scripts/run_all_ingestion.py
 
-### Inspect Output Evidence
-```bash
-# Verify synthetic dimension and transaction files
-ls -lh data/raw/synthetic/dimensions/
-ls data/raw/synthetic/pos_transactions/ | head -5
+The runner stops with an error if any dataset is empty.
 
-# Verify KAMIS partitions & watermark
-ls data/raw/kamis/market_prices/ | head -5
-cat data/raw/kamis/_state/watermark.json
+### How each pipeline is incremental and re-runnable
 
-# Verify KNBS parsed outputs
-head -5 data/raw/knbs/commodity_benchmarks.csv
-head -5 data/raw/knbs/cpi_divisions.csv
-```
+| Source | Incremental because | Re-runnable because |
+|---|---|---|
+| Synthetic | run for new dates with --start and --end | each day is seeded by its date and its folder is overwritten, so a rerun gives identical files |
+| KAMIS | a watermark (newest date per commodity) with a 3 day lookback skips old rows | exact duplicate rows are removed, output is sorted, files are written to a temporary name and renamed |
+| KNBS | the SHA-256 hash of each PDF is stored; a known report is skipped | each report owns one folder, report_month=YYYY-MM, so a revised report overwrites only itself |
 
----
+Re-runnability is checked by fingerprinting the output folder (md5 of every file), running the
+pipeline again, and fingerprinting again. The two fingerprints match.
 
-## Roadmap
+### Problems found while testing (and fixed)
 
-- [x] **Milestone 1: Data Ingestion** (Synthetic, KAMIS, KNBS)
-- [ ] **Milestone 2: Apache Kafka** (Event streaming for POS & inventory)
-- [ ] **Milestone 3: Apache Spark** (Bronze, Silver, Gold data lakehouse layers)
-- [ ] **Milestone 4: Data Warehousing** (PostgreSQL dimensional model & analytical queries)
-- [ ] **Milestone 5: Apache Airflow** (Orchestration, retry logic & DAGs)
-- [ ] **Milestone 6: Data Quality** (Validation suites & schema enforcement)
-- [ ] **Milestone 7: Deployment** (Docker compose & production monitoring)
-- [ ] **Milestone 8: Documentation & Defense** (Architecture, presentation & final defense)
+1. KAMIS output changed between runs. The cause was a rule that kept one row per natural key
+   (commodity, classification, grade, sex, market, county, date), while KAMIS holds 714 keys with
+   several different rows. Raw now removes only exact duplicates and keeps conflicting rows;
+   resolving them is a Silver layer rule.
+2. A KAMIS file lost most of its rows because an earlier file in the same run had already moved the
+   watermark. Every file is now judged against the watermark as it was at the start of the run.
+3. An earlier KNBS parser wrote 0 rows and still reported success. It was replaced by a parser that
+   validates its input (minimum row counts, division weights adding up to 100) and fails loudly.
+
+### Data quality findings in KAMIS (to be handled in Silver)
+
+- Prices are text with a unit (for example 50.00/Kg); a dash means missing.
+- County spellings differ from official names (Uasin-Gishu, Muranga) and one county value is "test".
+- Conflicting rows exist for one key, for example wholesale 1.00/Kg beside 200.00/Kg for the same market and day.
+- The downloaded data has no Mombasa, Baringo or Homa Bay rows, so the synthetic coastal store is in Kilifi.
+
+### Known limitations
+
+- A KAMIS export is capped at 3,000 rows (the site's largest page size), newest first, so old history is truncated. This is enough for an incremental pipeline.
+- KAMIS has no documented API. The site publishes no robots.txt. The downloader uses the site's own Excel export, 13 requests in total, 3 seconds apart, with an identified User-Agent.
+- KNBS publishes the CPI as a PDF. Parsing text from a PDF is fragile, so the parser checks its own output and stops if the layout changes.
+- Prices and quantities in the synthetic data are invented, only calibrated roughly to real prices.
