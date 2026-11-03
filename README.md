@@ -8,7 +8,7 @@ A solo data engineering capstone. It tracks what food and household goods cost a
 | Module | Status |
 |---|---|
 | 1. Data ingestion | Complete, submitted for review |
-| 2. Apache Kafka | Planned next |
+| 2. Apache Kafka | Complete, submitted for review |
 | 3. Apache Spark (Bronze, Silver, Gold) | Planned |
 | 4. PostgreSQL data warehouse | Planned |
 | 5. Apache Airflow | Planned |
@@ -97,3 +97,64 @@ pipeline again, and fingerprinting again. The two fingerprints match.
 - KAMIS has no documented API. The site publishes no robots.txt. The downloader uses the site's own Excel export, 13 requests in total, 3 seconds apart, with an identified User-Agent.
 - KNBS publishes the CPI as a PDF. Parsing text from a PDF is fragile, so the parser checks its own output and stops if the layout changes.
 - Prices and quantities in the synthetic data are invented, only calibrated roughly to real prices.
+
+## Module 2: Apache Kafka
+
+Live sales and stock events flow through a single Kafka broker (version 4.3.1, KRaft mode, container
+kr_kafka) and land as raw JSON Lines files in data/raw/streaming.
+
+### Topics
+
+| Topic | Key | Partitions | Written by | Read by (consumer group) |
+|---|---|---|---|---|
+| retail.pos.sales | store_id | 3 | kafka/producers/pos_producer.py | raw-landing |
+| retail.inventory.movements | store_id | 3 | kafka/producers/pos_producer.py | raw-landing, stock-monitor |
+| retail.stock.alerts | store_id | 1 | kafka/consumers/stock_monitor.py | raw-landing |
+| retail.dead_letter | source topic | 1 | kafka/consumers/raw_landing.py | inspected by hand |
+
+### Event flow
+
+    POS producer --> retail.pos.sales ----------------+
+          +-------> retail.inventory.movements ------+--> raw-landing group --> data/raw/streaming/<topic>/date=.../part-<partition>-<first offset>.jsonl
+                          |                          |          +-- invalid messages --> retail.dead_letter
+                          +--> stock-monitor group --> retail.stock.alerts --+
+
+### Run
+
+    docker compose --profile streaming up -d kafka
+    ./kafka/create_topics.sh
+    python kafka/consumers/stock_monitor.py --opening-stock 12 --reorder-level 8     # terminal 1
+    python kafka/producers/pos_producer.py --events 200 --rate 10 --seed 7           # terminal 2
+    python kafka/consumers/raw_landing.py --drain
+    python tests/test_streaming_logic.py
+
+### Design decisions
+
+- Messages are keyed by store_id, so one store's events stay in order inside a partition.
+- The two busy topics have 3 partitions so up to 3 consumers in one group can share the work.
+  Replication factor is 1 because there is one broker; production would use 3.
+- Two consumer groups read the inventory topic independently: raw-landing stores everything,
+  stock-monitor keeps live stock levels and publishes low stock alerts.
+- Delivery is at-least-once: the landing consumer commits offsets only after its file is written,
+  and the file name depends only on partition and first offset, so a replay overwrites the same
+  file instead of duplicating events.
+- Messages that fail validation go to the dead letter topic with the reason; the pipeline keeps running.
+- The stock monitor does not commit offsets. After a restart it replays the topic and rebuilds its
+  stock state; alert ids are deterministic so repeated alerts can be deduplicated.
+
+### Test results
+
+- 5 unit tests pass (event validity, dead letter routing, stable file names on replay, stock alerts).
+- Run 1: 200 receipts, 705 stock movements, 5 broken messages produced; 1,035 events landed
+  (200 sales, 705 movements, 130 alerts) and 5 dead letters.
+- Run 2: 600 receipts, 2,125 movements, 21 broken produced; 2,725 events landed and 21 dead letters.
+- In every landed topic the number of rows equals the number of unique ids (no duplicates), and
+  consumer lag is 0 on every partition.
+
+### Known limitations
+
+- Landing live creates many small files; a Spark compaction step handles this in Silver.
+- Streaming timestamps are UTC with an offset, while the batch synthetic data has no time zone;
+  Silver normalises both.
+- Single broker, no security (plain text listeners), JSON without a schema registry.
+- Stock monitor assumes an opening stock per store and product.
